@@ -42,10 +42,10 @@ python notebooks/do_compression.py \
                 --num_calibration_samples 512 \
                 --max_seq_length 1024 \ # sequence lenght
                 --seed 42 \ # random seed
-                --output_dir "vllm_out" # output dir
+                --output_dir "quant_checkpoints" # output dir
 ```
 
-Result quantized vllm checkpointed model saves in ```--output_dir```
+Result quantized vllm checkpointed model saves in ```--output_dir # by default: quant_checkpoints```
 
 
 ### RAG launch
