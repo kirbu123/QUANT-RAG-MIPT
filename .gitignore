@@ -152,6 +152,7 @@ logs/
 *.safetensors
 *.bin
 slurm_log/
+quant_checkpoints/*
 
 # OS specific
 .DS_Store

@@ -51,6 +51,7 @@ Result quantized vllm checkpointed model saves in ```--output_dir # by default: 
 ### RAG launch
 
 ```bash
+pip install "numpy<2" # downgrade numpy
 python rag/demo_rag.py
 ```
 
