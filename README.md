@@ -32,16 +32,16 @@ pip install -e ./llm-compressor -r requirements.txt
 
 ```bash
 python notebooks/do_compression.py \
-                --device cuda \ # device name
-                --model_name "TinyLlama/TinyLlama-1.1B-Chat-v1.0" \ # LLM model name
-                --dataset_name "wikitext" \ # train dataset name
-                --dataset_subset "wikitext-2-raw-v1" \ # train dataset subset
-                --scheme "W8A8" \ # quantization weight/activation scheme
+                --device cuda \
+                --model_name "TinyLlama/TinyLlama-1.1B-Chat-v1.0" \
+                --dataset_name "wikitext" \
+                --dataset_subset "wikitext-2-raw-v1" \
+                --scheme "W8A8" \
                 --targets "Linear" \
-                --next_reg_lam 0.1 \ # my custom next layer regularization coef
+                --next_reg_lam 0.1 \
                 --num_calibration_samples 512 \
-                --max_seq_length 1024 \ # sequence lenght
-                --seed 42 \ # random seed
+                --max_seq_length 1024 \
+                --seed 42 \
                 --output_dir "quant_checkpoints" # output dir
 ```
 
@@ -55,5 +55,5 @@ pip install "numpy<2" # downgrade numpy
 python rag/demo_rag.py
 ```
 
-* Input request in: ```rag/inp_query.txt```
-* Output request in: ```rag/out_query.txt```
+* Input request in: ```rag/results/inp_query.txt```
+* Output request in: ```rag/results/out_query.txt```

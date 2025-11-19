@@ -1,9 +1,11 @@
 from vectorizer import PDFVectorizer
-import os
 
 if __name__ == "__main__":
+
+    inp_path = "rag/results/inp_query.txt"
+    out_path = "rag/results/out_query.txt"
     
-    with open("rag/inp_query.txt", "r") as f:
+    with open(inp_path, "r") as f:
         query = f.read()
 
     print(f"User query: {query}")
@@ -17,7 +19,5 @@ if __name__ == "__main__":
         output += "\n" + doc + "\n"
     output += f"\nAnswer on query: \n{query}"
 
-    with open("rag/out_query.txt", "w", encoding="utf-8") as f:
+    with open(out_path, "w", encoding="utf-8") as f:
         f.write(output)
-
-    # print(f"RAG output: \n {output}")

@@ -12,3 +12,4 @@ tensorboard
 sentence_transformers
 faiss-gpu
 pypdf
+# vllm==0.3.3
