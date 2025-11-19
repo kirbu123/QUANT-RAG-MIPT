@@ -1,6 +1,8 @@
 import contextlib
 from typing import Dict, List, Optional, Tuple, Union
 
+from itertools import islice
+
 import torch
 from compressed_tensors.quantization import (
     QuantizationConfig,
@@ -104,6 +106,8 @@ class GPTQModifier(Modifier, QuantizationMixin):
         There is an explicit assumption that the model contains modules with
         `k_proj` and `v_proj` in their names. If this is not the case
         and kv_cache_scheme != None, the quantization of kv cache will fail
+    :param next_reg_lam: regularization parameter for next layer influence during
+        quantization. Defaults to 0.0.
     """
 
     # gptq modifier arguments
@@ -113,6 +117,7 @@ class GPTQModifier(Modifier, QuantizationMixin):
     # TODO: this does not serialize / will be incorrectly written
     actorder: Optional[Union[ActivationOrdering, Sentinel]] = Sentinel("static")
     offload_hessians: bool = False
+    next_reg_lam: float = 0.0  # New parameter
 
     # private variables
     _module_names: Dict[torch.nn.Module, str] = PrivateAttr(default_factory=dict)
@@ -247,6 +252,7 @@ class GPTQModifier(Modifier, QuantizationMixin):
         """
         Quantize modules which have been calibrated
         """
+        keys_list = list(self._num_samples.keys())
         for i, module in enumerate(list(self._num_samples.keys())):
             name = self._module_names[module]
             num_samples = self._num_samples[module]
@@ -258,9 +264,7 @@ class GPTQModifier(Modifier, QuantizationMixin):
             ), self._maybe_onload_hessian(module), CompressionLogger(
                 module
             ) as comp_logger:
-                module_next = None
-                if i < len(list(self._num_samples.keys())) - 1:
-                    module_next = list(self._num_samples.keys())[i+1]
+                module_next = next(islice(keys_list, i+1, i+2), None)
                 loss, quantized_weight, scale, zero_point, g_idx = quantize_weight(
                     module=module,
                     quant_args=quant_args,
@@ -268,7 +272,7 @@ class GPTQModifier(Modifier, QuantizationMixin):
                     blocksize=self.block_size,
                     percdamp=self.dampening_frac,
                     module_next=module_next,
-                    next_reg_lam=0.2
+                    next_reg_lam=self.next_reg_lam
                 )
                 comp_logger.set_loss(loss)
 

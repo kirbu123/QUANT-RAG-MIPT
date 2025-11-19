@@ -8,10 +8,6 @@ This project implements and experiments with Post-Training Quantization (PTQ) te
 
 We invite you to our: [literary review](https://docs.google.com/spreadsheets/d/1vHBZKW7IKO7Z1W8Cb-9dAWTvs5KyeQz7na4ITVk3UbE/edit?usp=sharing)
 
-### RAG
-
-We apply our quantization techniques to RAG of pdf articles.
-
 
 ### Clone the repository
 
@@ -20,11 +16,19 @@ git clone https://github.com/kirbu123/QUANT-RAG-MIPT.git
 cd QUANT-RAG-MIPT
 ```
 
-### Clone the repository
+### Setup enviroment
 
 ```bash
-# recomended python version = 3.8 for deepspeed and 3.10 for vllm
+# recomended python version = 3.8 for deepspeed and 3.10 for vllm && rag
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+cd llm-compressor && pip install -e .
 ```
 
+### RAG
+
+We apply our quantization techniques to RAG of pdf articles.
+
+'''bash
+python rag/demo_rag.py
+'''

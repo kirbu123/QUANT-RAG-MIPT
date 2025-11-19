@@ -39,7 +39,7 @@ class PDFVectorizer:
             return ""
         
         return text
-    
+
     def chunk_text(self, text: str, chunk_size: int = 256, overlap: int = 64):
         """Divide text on chunks"""
 

@@ -20,4 +20,4 @@ if __name__ == "__main__":
     with open("rag/out_query.txt", "w", encoding="utf-8") as f:
         f.write(output)
 
-    # print(f"RAG output: \n {output}")    
+    # print(f"RAG output: \n {output}")
