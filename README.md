@@ -22,8 +22,8 @@ cd QUANT-RAG-MIPT
 ```bash
 # recomended python version = 3.8 for deepspeed and 3.10 for vllm && rag
 python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-cd llm-compressor && pip install -e .
+pip install --upgrade pip
+pip install -e ./llm-compressor -r requirements.txt
 ```
 
 ### Quantization

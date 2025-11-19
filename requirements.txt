@@ -9,7 +9,6 @@ deepspeed
 jupyter
 ipykernel
 tensorboard
-numpy<2
 sentence_transformers
 faiss-gpu
 pypdf
