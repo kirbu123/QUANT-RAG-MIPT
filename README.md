@@ -23,7 +23,7 @@ cd QUANT-RAG-MIPT
 # recomended python version = 3.8 for deepspeed and 3.10 for vllm && rag
 python -m venv .venv && source .venv/bin/activate
 pip install --upgrade pip
-pip install -e ./llm-compressor -r requirements.txt
+pip install -e ./llm-compressor --upgrade -r requirements.txt
 ```
 
 ### Quantization
@@ -38,11 +38,14 @@ python notebooks/do_compression.py \
                 --dataset_subset "wikitext-2-raw-v1" \
                 --scheme "W8A8" \
                 --targets "Linear" \
-                --next_reg_lam 0.1 \
-                --num_calibration_samples 512 \
+                --num_calibration_samples 1024 \
                 --max_seq_length 1024 \
                 --seed 42 \
-                --output_dir "quant_checkpoints" # output dir
+                --smoothquant \
+                --gptq \
+                --next_reg_lam 0.1 \
+                --next_loss_lam 0.0 \
+                --output_dir "quant_checkpoints"
 ```
 
 Result quantized vllm checkpointed model saves in ```--output_dir # by default: quant_checkpoints```
@@ -51,7 +54,7 @@ Result quantized vllm checkpointed model saves in ```--output_dir # by default: 
 ### RAG launch
 
 ```bash
-pip install "numpy<2" # downgrade numpy
+pip install "numpy<2" && --upgrade torch # downgrade numpy && upgrade torch
 python rag/demo_rag.py
 ```
 

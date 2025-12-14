@@ -3,7 +3,12 @@ from typing import Dict, List, Optional, Tuple, Union
 
 from itertools import islice
 
+import os
+import datetime
+
 import torch
+import torch.nn as nn
+
 from compressed_tensors.quantization import (
     QuantizationConfig,
     QuantizationScheme,
@@ -24,6 +29,7 @@ from llmcompressor.core import Event, EventType, State
 from llmcompressor.modifiers import Modifier
 from llmcompressor.modifiers.quantization.gptq.gptq_quantize import (
     accumulate_hessian,
+    accumulate_hessian_next_reg,
     make_empty_hessian,
     quantize_weight,
 )
@@ -31,8 +37,15 @@ from llmcompressor.modifiers.quantization.quantization import QuantizationMixin
 from llmcompressor.sentinel import Sentinel
 from llmcompressor.utils.metric_logging import CompressionLogger
 
+from torch.utils.tensorboard import SummaryWriter
+
 __all__ = ["GPTQModifier"]
 
+
+class LambdaLoss(nn.Module):
+    def forward(self, lam, curr, prev):
+        # Returns a tensor connected to 'lam' for autograd
+        return prev + 2 * lam 
 
 class GPTQModifier(Modifier, QuantizationMixin):
     """
@@ -117,7 +130,24 @@ class GPTQModifier(Modifier, QuantizationMixin):
     # TODO: this does not serialize / will be incorrectly written
     actorder: Optional[Union[ActivationOrdering, Sentinel]] = Sentinel("static")
     offload_hessians: bool = False
+
     next_reg_lam: float = 0.0  # New parameter
+    next_loss_lam: float = 0.0  # New parameter
+    kernel_mode: str = 'default' # New parameter
+
+    next_reg_lam: float = 0.0  # New parameter
+    next_loss_lam: float = 0.0  # New parameter
+    kernel_mode: str = 'default' # New parameter
+
+    # Lam optimize params
+    lam_optimize: bool = False
+    log_dir: str = './log'
+    _log_writer: SummaryWriter = PrivateAttr()
+
+    # Add these as PrivateAttr since they're not serializable/model fields
+    _lam_tensor: torch.nn.Parameter = PrivateAttr()
+    _lam_optimizer: torch.optim.Optimizer = PrivateAttr()
+    _step_num: int = PrivateAttr()
 
     # private variables
     _module_names: Dict[torch.nn.Module, str] = PrivateAttr(default_factory=dict)
@@ -172,6 +202,18 @@ class GPTQModifier(Modifier, QuantizationMixin):
             )
         }
 
+        # Tensorboard init
+        log_path = os.path.join(self.log_dir, datetime.datetime.now().strftime('%Y%m%d_%H%M%S'))
+        self._log_writer = SummaryWriter(log_dir=log_path)
+
+        if self.lam_optimize:
+            self._step_num = 0
+            self._lam_tensor = torch.nn.Parameter(
+                torch.tensor(self.next_reg_lam, dtype=torch.float32), 
+                requires_grad=True
+            )
+            self._lam_optimizer = torch.optim.Adam([self._lam_tensor], lr=0.0003)
+
         return True
 
     def on_start(self, state: State, event: Event, **kwargs):
@@ -214,11 +256,40 @@ class GPTQModifier(Modifier, QuantizationMixin):
             if not self.ended_:
                 self.on_end(state, None)
 
+    def _get_next_module(self, current_module: torch.nn.Module) -> Optional[torch.nn.Module]:
+        """
+        Find the next module in the sequential order of targets
+        
+        :param current_module: current module to find next for
+        :return: next module in sequence or None if not found
+        """
+        if current_module not in self._module_names:
+            return None
+        
+        current_name = self._module_names[current_module]
+        
+        # Get all module names in order
+        all_modules = list(self._module_names.items())
+        
+        # Find current module index
+        current_idx = -1
+        for idx, (mod, name) in enumerate(all_modules):
+            if mod == current_module:
+                current_idx = idx
+                break
+        
+        if current_idx == -1 or current_idx + 1 >= len(all_modules):
+            return None
+        
+        # Return next module
+        next_module, next_name = all_modules[current_idx + 1]
+        return next_module
+
     def calibrate_module(
         self,
         module: torch.nn.Module,
         args: Tuple[torch.Tensor, ...],
-        _output: torch.Tensor,
+        output: torch.Tensor,
     ):
         """
         Calibration hook used to accumulate the hessian of the input to the module
@@ -226,7 +297,7 @@ class GPTQModifier(Modifier, QuantizationMixin):
         :param module: module being calibrated
         :param args: inputs to the module, the first element of which is the
             cannonical input
-        :param _output: uncompressed module output, unused
+        :param output: uncompressed module output, unused
         """
         # Assume that first argument is the input
         inp = args[0]
@@ -239,20 +310,71 @@ class GPTQModifier(Modifier, QuantizationMixin):
             self._hessians[module] = make_empty_hessian(module, device=init_device)
             self._num_samples[module] = 0
 
+        # Get next module and its input (current module's output)
+        module_next = None
+        inp_next = None
+        
+        if self.next_loss_lam != 0.:
+            # Find the next module in the sequential targets
+            module_next = self._get_next_module(module)
+            if module_next is not None:
+                inp_next = output  # Use current module's output as next module's input
+
         # Accumulate hessian with input with optional offloading
         with self._maybe_onload_hessian(module):
-            self._hessians[module], self._num_samples[module] = accumulate_hessian(
-                inp,
-                module,
-                self._hessians[module],
-                self._num_samples[module],
-            )
+            if self.next_loss_lam == 0.:
+                self._hessians[module], self._num_samples[module] = accumulate_hessian(
+                    inp,
+                    module,
+                    self._hessians[module],
+                    self._num_samples[module],
+                )
+            else:
+                self._hessians[module], self._num_samples[module] = accumulate_hessian_next_reg(
+                    inp,
+                    inp_next,
+                    module,
+                    module_next,
+                    self._hessians[module],
+                    self._num_samples[module],
+                    self.next_loss_lam,
+                    kernel_mode = self.kernel_mode
+                )
+
+    def _update_lam_param(self, lam_loss, prev_loss, loss, step_num):
+
+        if prev_loss is not None:
+            with torch.enable_grad():
+                self._lam_optimizer.zero_grad()
+                
+                loss_reg = lam_loss(self._lam_tensor, loss.item(), prev_loss.item())
+
+                loss_reg.backward()
+                self._lam_optimizer.step()
+
+            self._log_writer.add_scalar('loss-param', loss_reg.item(), self._step_num)
+            self._log_writer.add_scalar('lam-param', self.next_reg_lam, self._step_num)
+            self._step_num += 1
+
+            self.next_reg_lam = self._lam_tensor.item()
+    
+        prev_loss = loss.detach()
+
+        return prev_loss
 
     def compress_modules(self):
         """
         Quantize modules which have been calibrated
         """
         keys_list = list(self._num_samples.keys())
+
+        prev_loss = None
+
+        lam_loss = LambdaLoss()
+
+        if self.lam_optimize:
+            self._lam_optimizer.zero_grad()
+
         for i, module in enumerate(list(self._num_samples.keys())):
             name = self._module_names[module]
             num_samples = self._num_samples[module]
@@ -265,6 +387,7 @@ class GPTQModifier(Modifier, QuantizationMixin):
                 module
             ) as comp_logger:
                 module_next = next(islice(keys_list, i+1, i+2), None)
+
                 loss, quantized_weight, scale, zero_point, g_idx = quantize_weight(
                     module=module,
                     quant_args=quant_args,
@@ -272,9 +395,19 @@ class GPTQModifier(Modifier, QuantizationMixin):
                     blocksize=self.block_size,
                     percdamp=self.dampening_frac,
                     module_next=module_next,
-                    next_reg_lam=self.next_reg_lam
+                    next_reg_lam=self.next_reg_lam,
+                    kernel_mode=self.kernel_mode
                 )
-                comp_logger.set_loss(loss)
+                comp_logger.set_loss(loss.item())
+
+            # Update state for next iteration
+            if self.lam_optimize:
+                prev_loss = self._update_lam_param(
+                    lam_loss=lam_loss,
+                    prev_loss=prev_loss,
+                    loss=loss,
+                    step_num=i 
+                )
 
             update_offload_parameter(module, "weight", quantized_weight)
             update_offload_parameter(module, "weight_scale", scale)
@@ -292,6 +425,7 @@ class GPTQModifier(Modifier, QuantizationMixin):
         self.ended_ = True
         QuantizationMixin.end_calibration(self, state.model)
         self.remove_hooks()  # remove gptq hooks
+        self._log_writer.close()
 
     def on_finalize(self, state: State, **kwargs) -> bool:
         """
