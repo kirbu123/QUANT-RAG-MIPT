@@ -54,9 +54,15 @@ Result quantized vllm checkpointed model saves in ```--output_dir # by default: 
 
 ### RAG launch
 
+
+#### Setup
 ```bash
 pip install vllm==0.3.3 "numpy<2" --upgrade torch # downgrade numpy && upgrade torch
-python rag/demo_rag.py
+```
+
+#### Usage
+```bash
+python rag/console_rag.py --input rag/results/inp_query.txt --output rag/results/out_query.txt
 ```
 
 * Input request in: ```rag/results/inp_query.txt```
