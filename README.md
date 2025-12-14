@@ -23,6 +23,7 @@ cd QUANT-RAG-MIPT
 # recomended python version = 3.8 for deepspeed and 3.10 for vllm && rag
 python -m venv .venv && source .venv/bin/activate
 pip install --upgrade pip
+export SETUPTOOLS_SCM_PRETEND_VERSION=0.0.1
 pip install -e ./llm-compressor --upgrade -r requirements.txt
 ```
 
